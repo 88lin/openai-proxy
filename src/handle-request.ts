@@ -39,8 +39,8 @@ export default async function handleRequest(req: Request & { nextUrl?: URL }) {
   const headers = pickHeaders(req.headers, ["content-type", "authorization"]);
 
   if (headers.status === 403) {
-      return headers;
-  }
+    return new Response(null, { status: 403 });
+}
 
   const res = await fetch(url, {
     body: req.body,
