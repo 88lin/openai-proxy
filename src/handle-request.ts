@@ -1,3 +1,11 @@
+import { Request, Response } from 'express';
+
+const blockedIps = process.env.BLOCKED_IPS?.split(',') || [];
+
+function isIpBlocked(ip: string): boolean {
+  return blockedIps.includes(ip);
+}
+
 const pickHeaders = (headers: Headers, keys: (string | RegExp)[]): Headers => {
   const picked = new Headers();
   for (const key of headers.keys()) {
@@ -17,32 +25,37 @@ const CORS_HEADERS: Record<string, string> = {
   "access-control-allow-headers": "Content-Type, Authorization",
 };
 
-export default async function handleRequest(req: Request & { nextUrl?: URL }) {
+export default async function handleRequest(req: Request & { nextUrl?: URL }, res: Response) {
+  const ip = req.headers['x-forwarded-for'] as string;
+
+  if (isIpBlocked(ip)) {
+    res.status(403).send('Access denied');
+    return;
+  }
+
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      headers: CORS_HEADERS,
-    });
+    res.set(CORS_HEADERS);
+    res.send(null);
+    return;
   }
 
   const { pathname, search } = req.nextUrl ? req.nextUrl : new URL(req.url);
   const url = new URL(pathname + search, "https://api.openai.com").href;
   const headers = pickHeaders(req.headers, ["content-type", "authorization"]);
 
-  const res = await fetch(url, {
+  const response = await fetch(url, {
     body: req.body,
     method: req.method,
     headers,
   });
 
-  const resHeaders = {
+  const responseHeaders = {
     ...CORS_HEADERS,
     ...Object.fromEntries(
-      pickHeaders(res.headers, ["content-type", /^x-ratelimit-/, /^openai-/])
+      pickHeaders(response.headers, ["content-type", /^x-ratelimit-/, /^openai-/])
     ),
   };
 
-  return new Response(res.body, {
-    headers: resHeaders,
-    status: res.status
-  });
+  res.set(responseHeaders);
+  res.status(response.status).send(await response.text());
 }
